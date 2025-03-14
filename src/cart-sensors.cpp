@@ -1,8 +1,16 @@
 // Kód je založen na :
 // AS5600 magnetic position encoder; autor: Curious Scientist; dostupné z: https://curiousscientist.tech/blog/as5600-magnetic-position-encoder
 // ADXL345 accelerometer; autor: Dejan; dostupné z: https://howtomechatronics.com/tutorials/arduino/how-to-track-orientation-with-arduino-and-adxl345-accelerometer/
+
+// Knihovny
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
+
+// SD
+File myFile;
+const int chipSelect = 10;
 
 // AS5600
 #define AS5600 0x36
@@ -11,22 +19,30 @@ int lowbyte;
 word highbyte;
 int rawAngle;
 float degAngle;
-
 int quadrantNumber, previousquadrantNumber;
+const int degConst = 0.087890625;
 float numberofTurns = 0;
 float Angle_corrected = 0;
 float startAngle = 0;
 float totalAngle = 0;
 
 // GY-291
-#define ADXL345 (0x53)
+#define ADXL345 0x53
 float X_val, Y_val, Z_val;
 
 void setup()
 {
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(5, INPUT);
   Serial.begin(9600);
   Wire.begin();
   Wire.setClock(800000L);
+
+  while (!SD.begin(chipSelect))
+  {
+    Serial.println("Čtení SD selhalo");
+    return;
+  }
 
   Wire.beginTransmission(ADXL345);
   Wire.write(0x2D);
@@ -41,10 +57,44 @@ void setup()
 
 void loop()
 {
-  Accelerometer();
-  ReadRawAngle();
-  correctAngle();
-  Angle_total();
+  if (digitalRead(5) == HIGH)
+  {
+    SD.remove("test_data.csv");
+  }
+
+  while (digitalRead(5) == HIGH)
+  {
+    Accelerometer();
+    ReadRawAngle();
+    correctAngle();
+    Angle_total();
+
+    unsigned long currentTime = millis();
+
+    myFile = SD.open("test_data.csv", FILE_WRITE);
+    if (myFile)
+    {
+      myFile.print(currentTime);
+      myFile.print(",");
+      myFile.print(totalAngle);
+      myFile.print(",");
+      myFile.print(Y_val);
+      myFile.print(",");
+      myFile.println(Z_val);
+      myFile.close();
+    }
+    else
+    {
+      // chyba otevření souboru - blíká LED
+      while (true)
+      {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(500);
+      }
+    }
+  }
 }
 
 void Accelerometer()
@@ -54,18 +104,10 @@ void Accelerometer()
   Wire.endTransmission(false);
   Wire.requestFrom(ADXL345, 6, true);
   X_val = (Wire.read() | Wire.read() << 8);
-  X_val = X_val / 256;
   Y_val = (Wire.read() | Wire.read() << 8);
   Y_val = Y_val / 256;
   Z_val = (Wire.read() | Wire.read() << 8);
   Z_val = Z_val / 256;
-
-  Serial.print("X: ");
-  Serial.print(X_val);
-  Serial.print(" Y: ");
-  Serial.print(Y_val);
-  Serial.print(" Z: ");
-  Serial.println(Z_val);
 }
 
 void ReadRawAngle()
@@ -75,8 +117,7 @@ void ReadRawAngle()
   Wire.endTransmission();
   Wire.requestFrom(AS5600, 1);
 
-  while (Wire.available() == 0)
-    ;
+  while (Wire.available() == 0);
   lowbyte = Wire.read();
 
   Wire.beginTransmission(AS5600);
@@ -84,14 +125,13 @@ void ReadRawAngle()
   Wire.endTransmission();
   Wire.requestFrom(AS5600, 1);
 
-  while (Wire.available() == 0)
-    ;
+  while (Wire.available() == 0);
   highbyte = Wire.read();
 
   highbyte = highbyte << 8;
   rawAngle = highbyte | lowbyte;
 
-  degAngle = rawAngle * 0.087890625;
+  degAngle = rawAngle * degConst;
 }
 
 void correctAngle()
@@ -141,8 +181,8 @@ void Angle_total()
   }
 
   totalAngle = 360 * numberofTurns + Angle_corrected;
-//Serial.print("Total angle: ");//
-//Serial.println(totalAngle, 2);
+  // Serial.print("Total angle: ");//
+  // Serial.println(totalAngle, 2);
 }
 void checkMagnet()
 {
@@ -155,8 +195,7 @@ void checkMagnet()
     Wire.endTransmission();
     Wire.requestFrom(AS5600, 1);
 
-    while (Wire.available() == 0)
-      ;
+    while (Wire.available() == 0);
     magnetStatus = Wire.read();
 
     Serial.print("Magnet status: ");
