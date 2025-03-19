@@ -3,47 +3,58 @@
 // ADXL345 accelerometer; autor: Dejan; dostupné z: https://howtomechatronics.com/tutorials/arduino/how-to-track-orientation-with-arduino-and-adxl345-accelerometer/
 
 // Knihovny
-#include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
 
 // SD
-File myFile;
+File dataFile;
 const int chipSelect = 10;
 
 // AS5600
-#define AS5600 0x36
+const int AS5600 = 0x36;
 int magnetStatus = 0;
 int lowbyte;
 word highbyte;
 int rawAngle;
 float degAngle;
-int quadrantNumber, previousquadrantNumber;
 const int degConst = 0.087890625;
 float numberofTurns = 0;
 float Angle_corrected = 0;
 float startAngle = 0;
 float totalAngle = 0;
+float previousDegAngle = 0;
 
 // GY-291
-#define ADXL345 0x53
+const int ADXL345 = 0x53;
 float X_val, Y_val, Z_val;
 
 void setup()
 {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(5, INPUT);
   Serial.begin(9600);
+  pinMode(5, INPUT);
+
+  if (!SD.begin(chipSelect))
+  {
+  Serial.println("CHYBA: Inicializace SD selhala!");
+  while (true);
+  }
+  Serial.println("SD inicializace úspěšná!");
+  SD.remove("data.csv");
+
+  dataFile = SD.open("data.csv", FILE_WRITE);
+  if (dataFile) {
+  Serial.println("Soubor data.csv vytvořen.");
+  dataFile.println("currentTime,totalAngle,Y_val,Z_val");
+  dataFile.close();
+  } else {
+  Serial.println("Chyba: Nelze vytvořit data.csv");
+  }
+  delay(50);
+
   Wire.begin();
   Wire.setClock(800000L);
-
-  while (!SD.begin(chipSelect))
-  {
-    Serial.println("Čtení SD selhalo");
-    return;
-  }
-
   Wire.beginTransmission(ADXL345);
   Wire.write(0x2D);
   Wire.write(8);
@@ -57,42 +68,42 @@ void setup()
 
 void loop()
 {
-  if (digitalRead(5) == HIGH)
-  {
-    SD.remove("test_data.csv");
-  }
+  ReadRawAngle();
+  correctAngle();
+  Angle_total();
+  delay(5);
+  Accelerometer(); 
+  Serial.println(rawAngle);
 
-  while (digitalRead(5) == HIGH)
-  {
-    Accelerometer();
+  while (digitalRead(5) == HIGH) {
     ReadRawAngle();
     correctAngle();
     Angle_total();
-
+    Accelerometer();
     unsigned long currentTime = millis();
 
-    myFile = SD.open("test_data.csv", FILE_WRITE);
-    if (myFile)
+    Serial.print(currentTime);
+    Serial.print(",");
+    Serial.print(totalAngle);
+    Serial.print(",");
+    Serial.print(Y_val);
+    Serial.print(",");
+    Serial.println(Z_val);
+    delay(5);
+    dataFile = SD.open("data.csv", FILE_WRITE);
+    if (dataFile)
     {
-      myFile.print(currentTime);
-      myFile.print(",");
-      myFile.print(totalAngle);
-      myFile.print(",");
-      myFile.print(Y_val);
-      myFile.print(",");
-      myFile.println(Z_val);
-      myFile.close();
+      dataFile.print(currentTime);
+      dataFile.print(",");
+      dataFile.print(totalAngle);
+      dataFile.print(",");
+      dataFile.print(Y_val);
+      dataFile.print(",");
+      dataFile.println(Z_val);
+      dataFile.close();
     }
-    else
-    {
-      // chyba otevření souboru - blíká LED
-      while (true)
-      {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(500);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(500);
-      }
+    else {
+    Serial.println("Chyba: Nelze otevřít data.csv");
     }
   }
 }
@@ -139,50 +150,24 @@ void correctAngle()
   Angle_corrected = degAngle - startAngle;
   if (Angle_corrected < 0)
   {
-    Angle_corrected = 360 + Angle_corrected;
+    Angle_corrected = Angle_corrected + 360;
   }
 }
 
 void Angle_total()
 {
-  if (Angle_corrected >= 0 && Angle_corrected <= 90)
+  float R_change = Angle_corrected - previousDegAngle;
+  if (R_change > 180)
   {
-    quadrantNumber = 1;
+    numberofTurns--;
+  }
+  else if (R_change < -180)
+  {
+    numberofTurns++;
   }
 
-  if (Angle_corrected > 90 && Angle_corrected <= 180)
-  {
-    quadrantNumber = 2;
-  }
-
-  if (Angle_corrected > 180 && Angle_corrected <= 270)
-  {
-    quadrantNumber = 3;
-  }
-
-  if (Angle_corrected > 270 && Angle_corrected < 360)
-  {
-    quadrantNumber = 4;
-  }
-
-  if (quadrantNumber != previousquadrantNumber)
-  {
-    if (quadrantNumber == 1 && previousquadrantNumber == 4)
-    {
-      numberofTurns++;
-    }
-
-    if (quadrantNumber == 4 && previousquadrantNumber == 1)
-    {
-      numberofTurns--;
-    }
-
-    previousquadrantNumber = quadrantNumber;
-  }
-
-  totalAngle = 360 * numberofTurns + Angle_corrected;
-  // Serial.print("Total angle: ");//
-  // Serial.println(totalAngle, 2);
+  totalAngle = (360 * numberofTurns) + Angle_corrected;
+  previousDegAngle = Angle_corrected;
 }
 void checkMagnet()
 {
