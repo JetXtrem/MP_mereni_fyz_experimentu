@@ -18,14 +18,14 @@ int lowbyte;
 word highbyte;
 int rawAngle;
 float degAngle;
-const int degConst = 0.087890625;
-float numberofTurns = 0;
-float Angle_corrected = 0;
+const float degConst = 0.087890625;
+float numberOfTurns = 0;
+float AngleCorrected = 0;
 float startAngle = 0;
 float totalAngle = 0;
 float previousDegAngle = 0;
 
-// GY-291
+// ADXL345
 const int ADXL345 = 0x53;
 float X_val, Y_val, Z_val;
 
@@ -61,6 +61,12 @@ void setup()
   Wire.endTransmission();
   delay(10);
 
+  Wire.beginTransmission(ADXL345);
+  Wire.write(0x20);
+  Wire.write(1);
+  Wire.endTransmission();
+  delay(10);
+
   checkMagnet();
   ReadRawAngle();
   startAngle = degAngle;
@@ -68,13 +74,6 @@ void setup()
 
 void loop()
 {
-  ReadRawAngle();
-  correctAngle();
-  Angle_total();
-  delay(5);
-  Accelerometer(); 
-  Serial.println(rawAngle);
-
   while (digitalRead(5) == HIGH) {
     ReadRawAngle();
     correctAngle();
@@ -147,27 +146,27 @@ void ReadRawAngle()
 
 void correctAngle()
 {
-  Angle_corrected = degAngle - startAngle;
-  if (Angle_corrected < 0)
+  AngleCorrected = degAngle - startAngle;
+  if (AngleCorrected < 0)
   {
-    Angle_corrected = Angle_corrected + 360;
+    AngleCorrected = AngleCorrected + 360;
   }
 }
 
 void Angle_total()
 {
-  float R_change = Angle_corrected - previousDegAngle;
-  if (R_change > 180)
+  float RotationChange = AngleCorrected - previousDegAngle;
+  if (RotationChange > 180)
   {
-    numberofTurns--;
+    numberOfTurns--;
   }
-  else if (R_change < -180)
+  else if (RotationChange < -180)
   {
-    numberofTurns++;
+    numberOfTurns++;
   }
 
-  totalAngle = (360 * numberofTurns) + Angle_corrected;
-  previousDegAngle = Angle_corrected;
+  totalAngle = (360 * numberOfTurns) + AngleCorrected;
+  previousDegAngle = AngleCorrected;
 }
 void checkMagnet()
 {
